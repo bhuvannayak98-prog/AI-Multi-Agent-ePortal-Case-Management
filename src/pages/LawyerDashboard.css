@@ -1,0 +1,37 @@
+.dashboard-notifications {
+  position: fixed !important;
+  top: 16px !important;
+  right: 20px !important;
+  left: auto !important;
+  z-index: 99999 !important;
+  width: max-content;
+}
+
+.dashboard-notifications-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #172033;
+  font-weight: 700;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+
+.dashboard-notifications-menu {
+  position: absolute !important;
+  top: calc(100% + 10px) !important;
+  right: 0 !important;
+  left: auto !important;
+  z-index: 100000 !important;
+}
+
+@media (max-width: 600px) {
+  .dashboard-notifications {
+    top: 10px !important;
+    right: 10px !important;
+  }
+}

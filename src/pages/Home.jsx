@@ -1,3 +1,4 @@
+
 import { Link } from 'react-router-dom'
 
 function Home() {
@@ -15,16 +16,15 @@ function Home() {
           </div>
         </div>
 
-        <div className="home-nav-links">
-          <Link to="/">Home</Link>
+<div className="home-nav-links">
+  <Link to="/login" className="home-login-button">
+    Login
+  </Link>
 
-          <Link
-            to="/login"
-            className="home-login-button"
-          >
-            Login
-          </Link>
-        </div>
+  <Link to="/login/admin" className="home-login-button">
+    Admin Login
+  </Link>
+</div>
       </nav>
 
       {/* Hero Section */}
@@ -51,23 +51,14 @@ function Home() {
               human-in-the-loop review.
             </p>
 
-            <div className="hero-actions">
-
-              <Link
-                to="/login"
-                className="hero-primary-button"
-              >
-                Enter Portal →
-              </Link>
-
-              <a
-                href="#features"
-                className="hero-secondary-button"
-              >
-                Explore Features
-              </a>
-
-            </div>
+<div className="hero-actions">
+  <a
+    href="#features"
+    className="hero-secondary-button"
+  >
+    Explore Features
+  </a>
+</div>
 
             <div className="hero-note">
               <span>✓</span>
@@ -97,17 +88,17 @@ function Home() {
 
               <div>
                 <span>Total Cases</span>
-                <strong>24</strong>
+                <strong>-</strong>
               </div>
 
               <div>
                 <span>High Priority</span>
-                <strong>05</strong>
+                <strong>-</strong>
               </div>
 
               <div>
                 <span>Hearings</span>
-                <strong>08</strong>
+                <strong>-</strong>
               </div>
 
             </div>
@@ -115,15 +106,15 @@ function Home() {
             <div className="preview-case">
 
               <div className="preview-case-top">
-                <span>CASE-2026-001</span>
-
+                <span>CASE-0000-00</span>
                 <b>HIGH</b>
               </div>
 
-              <h4>Property Dispute</h4>
+              <h4>Case Title</h4>
 
               <p>
-                Amit Kumar vs Ravi Sharma
+                Petitioner vs Respondent
+  
               </p>
 
               <div className="preview-progress">
@@ -187,13 +178,8 @@ function Home() {
           <div className="feature-grid">
 
             <div className="feature-card">
-              <div className="feature-number">
-                01
-              </div>
-
-              <div className="feature-icon">
-                📄
-              </div>
+              <div className="feature-number">01</div>
+              <div className="feature-icon">📄</div>
 
               <h3>Automated Case Intake</h3>
 
@@ -205,13 +191,8 @@ function Home() {
             </div>
 
             <div className="feature-card">
-              <div className="feature-number">
-                02
-              </div>
-
-              <div className="feature-icon">
-                🔎
-              </div>
+              <div className="feature-number">02</div>
+              <div className="feature-icon">🔎</div>
 
               <h3>Document Processing</h3>
 
@@ -222,13 +203,8 @@ function Home() {
             </div>
 
             <div className="feature-card">
-              <div className="feature-number">
-                03
-              </div>
-
-              <div className="feature-icon">
-                ⚖
-              </div>
+              <div className="feature-number">03</div>
+              <div className="feature-icon">⚖</div>
 
               <h3>Precedent Retrieval</h3>
 
@@ -240,13 +216,8 @@ function Home() {
             </div>
 
             <div className="feature-card">
-              <div className="feature-number">
-                04
-              </div>
-
-              <div className="feature-icon">
-                !
-              </div>
+              <div className="feature-number">04</div>
+              <div className="feature-icon">!</div>
 
               <h3>Priority Scoring</h3>
 
@@ -257,13 +228,8 @@ function Home() {
             </div>
 
             <div className="feature-card">
-              <div className="feature-number">
-                05
-              </div>
-
-              <div className="feature-icon">
-                📅
-              </div>
+              <div className="feature-number">05</div>
+              <div className="feature-icon">📅</div>
 
               <h3>Hearing Scheduling</h3>
 
@@ -274,13 +240,8 @@ function Home() {
             </div>
 
             <div className="feature-card">
-              <div className="feature-number">
-                06
-              </div>
-
-              <div className="feature-icon">
-                ✓
-              </div>
+              <div className="feature-number">06</div>
+              <div className="feature-icon">✓</div>
 
               <h3>Human Review</h3>
 
@@ -312,69 +273,47 @@ function Home() {
             <div>
               <span>01</span>
               <strong>Register</strong>
-              <small>
-                Case intake
-              </small>
+              <small>Case intake</small>
             </div>
 
-            <div className="home-workflow-arrow">
-              →
-            </div>
+            <div className="home-workflow-arrow">→</div>
 
             <div>
               <span>02</span>
               <strong>Extract</strong>
-              <small>
-                OCR processing
-              </small>
+              <small>OCR processing</small>
             </div>
 
-            <div className="home-workflow-arrow">
-              →
-            </div>
+            <div className="home-workflow-arrow">→</div>
 
             <div>
               <span>03</span>
               <strong>Retrieve</strong>
-              <small>
-                Precedent search
-              </small>
+              <small>Precedent search</small>
             </div>
 
-            <div className="home-workflow-arrow">
-              →
-            </div>
+            <div className="home-workflow-arrow">→</div>
 
             <div>
               <span>04</span>
               <strong>Prioritize</strong>
-              <small>
-                AI scoring
-              </small>
+              <small>AI scoring</small>
             </div>
 
-            <div className="home-workflow-arrow">
-              →
-            </div>
+            <div className="home-workflow-arrow">→</div>
 
             <div>
               <span>05</span>
               <strong>Schedule</strong>
-              <small>
-                Hearing slot
-              </small>
+              <small>Hearing slot</small>
             </div>
 
-            <div className="home-workflow-arrow">
-              →
-            </div>
+            <div className="home-workflow-arrow">→</div>
 
             <div>
               <span>06</span>
               <strong>Review</strong>
-              <small>
-                Human approval
-              </small>
+              <small>Human approval</small>
             </div>
 
           </div>
