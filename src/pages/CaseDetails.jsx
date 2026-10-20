@@ -1,189 +1,277 @@
+
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+
+const API_URL = 'http://127.0.0.1:8000'
 
 function CaseDetails() {
   const navigate = useNavigate()
   const { id } = useParams()
 
   const role = localStorage.getItem('userRole') || 'User'
+  const token = localStorage.getItem('accessToken')
+  const normalizedRole = role.trim().toLowerCase()
+  const canReview = normalizedRole === 'judge'
 
-  const canReview =
-    role === 'Judge' ||
-    role === 'Registrar'
-
-  const fallbackCase = {
-    id: id || 'CASE-2026-001',
-    caseType: 'Property Dispute',
-    petitioner: 'Amit Kumar',
-    respondent: 'Ravi Sharma',
-    description:
-      'Property dispute between the petitioner and respondent.',
-    lawSection: 'Section 420 IPC',
-    filingDate: '2026-09-20',
-    urgency: 'High',
-    status: 'Registered',
-  }
-
-  const [caseData, setCaseData] = useState(fallbackCase)
+  const [caseData, setCaseData] = useState(null)
+  const [representationType, setRepresentationType] = useState(null)
+  const [workflowStage, setWorkflowStage] = useState(null)
+  const [representationLoading, setRepresentationLoading] = useState(false)
+  const [representationError, setRepresentationError] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [ocrText, setOcrText] = useState('')
+  const [lawyerDecisionLoading, setLawyerDecisionLoading] = useState(false)
+  const [lawyerDecisionError, setLawyerDecisionError] = useState('')
+  const [lawyerDecisionMessage, setLawyerDecisionMessage] = useState('')
   const [priorityResult, setPriorityResult] = useState(null)
   const [precedentResult, setPrecedentResult] = useState(null)
   const [scheduleResult, setScheduleResult] = useState(null)
   const [processing, setProcessing] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [reviewStatus, setReviewStatus] = useState('Pending')
   const [reviewComment, setReviewComment] = useState('')
-
-  // ==========================================================
-  // LOAD EXACT CASE
-  // ==========================================================
+  const [reviewerNote, setReviewerNote] = useState('')
+  const [modifiedDate, setModifiedDate] = useState('')
+  const [modifiedTime, setModifiedTime] = useState('')
 
   useEffect(() => {
-    try {
-      const existingCases = JSON.parse(
-        localStorage.getItem('cases') || '[]'
-      )
+    let cancelled = false
 
-      if (
-        Array.isArray(existingCases) &&
-        existingCases.length > 0
-      ) {
-        const matchedCase = existingCases.find(
-          (item) => item.id === id
+    async function loadCase() {
+      if (!token) {
+        navigate('/login', { replace: true })
+        return
+      }
+
+      setLoading(true)
+      setError('')
+      setCaseData(null)
+      setRepresentationError('')
+
+      try {
+        const response = await fetch(
+          `${API_URL}/cases/${encodeURIComponent(id)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         )
 
-        if (matchedCase) {
-          setCaseData(matchedCase)
-
-          setOcrText(
-            matchedCase.ocrText || ''
-          )
-
-          setPriorityResult(
-            matchedCase.priorityResult || null
-          )
-
-          setPrecedentResult(
-            matchedCase.precedentResult || null
-          )
-
-          setScheduleResult(
-            matchedCase.scheduleResult || null
-          )
-
-          setReviewStatus(
-            matchedCase.reviewStatus || 'Pending'
-          )
-
-          setReviewComment(
-            matchedCase.reviewComment || ''
-          )
-
-          localStorage.setItem(
-            'currentCase',
-            JSON.stringify(matchedCase)
-          )
-
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('accessToken')
+          localStorage.removeItem('isLoggedIn')
+          navigate('/login', { replace: true })
           return
         }
+
+        if (response.status === 404) {
+          if (!cancelled) {
+            setError('Case not found or you are not authorized to access it.')
+          }
+          return
+        }
+
+        if (!response.ok) {
+          throw new Error(`Could not load case (${response.status}).`)
+        }
+
+        const data = await response.json()
+        const loadedCase = data.case || data
+
+        if (!cancelled) {
+          setCaseData(loadedCase)
+          setRepresentationType(loadedCase.representationType || null)
+          setWorkflowStage(loadedCase.workflowStage || null)
+          setOcrText(loadedCase.ocrText || '')
+          setPriorityResult(loadedCase.priorityResult || null)
+          setPrecedentResult(loadedCase.precedentResult || null)
+          setScheduleResult(
+  loadedCase.proposedHearingDate && loadedCase.proposedHearingTime
+    ? {
+        recommendedDate: loadedCase.proposedHearingDate,
+        recommendedTime: loadedCase.proposedHearingTime,
+        decision: loadedCase.hearingDecision || 'Pending',
+        humanApprovalRequired:
+          (loadedCase.hearingDecision || 'Pending') === 'Pending',
+        alreadyScheduled: true,
+      }
+    : loadedCase.scheduleResult || null
+)
+
+setReviewStatus(loadedCase.hearingDecision || 'Pending')
+setReviewComment('')
+setModifiedDate(loadedCase.proposedHearingDate || '')
+setModifiedTime(loadedCase.proposedHearingTime || '')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load case:', err)
+          setError(err.message || 'Failed to load case.')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    loadCase()
+
+    return () => {
+      cancelled = true
+    }
+  }, [id, token, navigate])
+
+  async function apiPost(path, body, isFormData = false) {
+    if (!token) {
+      navigate('/login', { replace: true })
+      throw new Error('Your session has expired. Please log in again.')
+    }
+
+    const headers = {
+      Authorization: `Bearer ${token}`,
+    }
+
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json'
+    }
+
+    const response = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: isFormData ? body : JSON.stringify(body),
+    })
+
+    if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('isLoggedIn')
+        navigate('/login', { replace: true })
       }
 
-      setCaseData(fallbackCase)
-      setOcrText('')
-      setPriorityResult(null)
-      setPrecedentResult(null)
-      setScheduleResult(null)
-      setReviewStatus('Pending')
-      setReviewComment('')
-    } catch (error) {
-      console.error(
-        'Failed to load case:',
-        error
+      const deniedData = await response.json().catch(() => ({}))
+      throw new Error(
+        deniedData.detail ||
+          deniedData.message ||
+          'Your session has expired or access was denied.'
       )
     }
-  }, [id])
 
-  // ==========================================================
-  // UPDATE CASE STORAGE
-  // ==========================================================
+    const data = await response.json().catch(() => ({}))
 
-  const updateCaseStorage = (updates) => {
+    if (!response.ok) {
+      throw new Error(
+        data.detail || data.message || `Request failed (${response.status}).`
+      )
+    }
+
+    if (data.error) throw new Error(data.error)
+
+    return data
+  }
+
+  const caseId =
+    caseData?.caseId || caseData?.case_id || caseData?.id
+
+  const isCaseOwnerLitigant =
+    normalizedRole === 'litigant' &&
+    caseData?.isCaseOwner === true
+
+  const isLawyerOwner =
+    normalizedRole === 'lawyer' &&
+    caseData?.isCaseOwner === true
+
+  const isAssignedLawyer =
+    normalizedRole === 'lawyer' &&
+    caseData?.isCaseOwner !== true &&
+    representationType === 'Recommend a Lawyer' &&
+    workflowStage === 'Lawyer Assigned'
+
+  const canUseAllAgents =
+    (isCaseOwnerLitigant &&
+      representationType === 'Self-Representation') ||
+    isLawyerOwner
+
+  const canUseAnalysisAgents =
+    canUseAllAgents || isAssignedLawyer
+
+  const canUseOcr = canUseAllAgents
+
+  const handleRepresentationChoice = async (choice) => {
+    if (!isCaseOwnerLitigant || !caseId) {
+      setRepresentationError(
+        'Only the litigant who owns this case can choose representation.'
+      )
+      return
+    }
+
     try {
-      const updatedCase = {
-        ...caseData,
-        ...updates,
-      }
+      setRepresentationLoading(true)
+      setRepresentationError('')
 
-      setCaseData(updatedCase)
-
-      localStorage.setItem(
-        'currentCase',
-        JSON.stringify(updatedCase)
+      const data = await apiPost(
+        `/cases/${encodeURIComponent(caseId)}/representation`,
+        { representation_type: choice }
       )
 
-      const existingCases = JSON.parse(
-        localStorage.getItem('cases') || '[]'
+      setRepresentationType(data.representationType || choice)
+      setWorkflowStage(
+        choice === 'Recommend a Lawyer'
+          ? 'Awaiting Lawyer Approval'
+          : 'Self-Representation Selected'
       )
-
-      const caseExists = existingCases.some(
-        (item) => item.id === updatedCase.id
+    } catch (err) {
+      console.error('Failed to save representation choice:', err)
+      setRepresentationError(
+        err.message || 'Could not save your representation choice.'
       )
-
-      let updatedCases
-
-      if (caseExists) {
-        updatedCases = existingCases.map(
-          (item) =>
-            item.id === updatedCase.id
-              ? {
-                  ...item,
-                  ...updates,
-                }
-              : item
-        )
-      } else {
-        updatedCases = [
-          ...existingCases,
-          updatedCase,
-        ]
-      }
-
-      localStorage.setItem(
-        'cases',
-        JSON.stringify(updatedCases)
-      )
-
-      return updatedCase
-    } catch (error) {
-      console.error(
-        'Failed to update case storage:',
-        error
-      )
-
-      return null
+    } finally {
+      setRepresentationLoading(false)
     }
   }
 
-  // ==========================================================
-  // FILE SELECTION
-  // ==========================================================
+  const handleLawyerDecision = async (decision) => {
+    if (!caseId) return
 
-  const handleFileChange = (e) => {
-    setSelectedFile(
-      e.target.files?.[0] || null
-    )
+    setLawyerDecisionLoading(true)
+    setLawyerDecisionError('')
+    setLawyerDecisionMessage('')
+
+    try {
+      const result = await apiPost(
+        `/cases/${encodeURIComponent(caseId)}/lawyer-decision`,
+        { decision }
+      )
+
+      setLawyerDecisionMessage(
+        result.message ||
+          (decision === 'reject'
+            ? 'Lawyer rejected the case. The litigant can choose another lawyer.'
+            : 'Lawyer accepted the case.')
+      )
+
+      setWorkflowStage(result.workflowStage || workflowStage)
+    } catch (err) {
+      setLawyerDecisionError(
+        err.message || 'Unable to submit your decision.'
+      )
+    } finally {
+      setLawyerDecisionLoading(false)
+    }
   }
 
-  // ==========================================================
-  // OCR
-  // ==========================================================
+  const handleFileChange = (event) => {
+    setSelectedFile(event.target.files?.[0] || null)
+  }
 
   const handleOCR = async () => {
     if (!selectedFile) {
-      alert(
-        'Please select a document first.'
-      )
+      alert('Please select a document first.')
+      return
+    }
 
+    if (!caseId) {
+      alert('Case ID is missing. Reload the case and try again.')
       return
     }
 
@@ -191,1786 +279,1013 @@ function CaseDetails() {
       setProcessing(true)
 
       const formData = new FormData()
+      formData.append('caseId', caseId)
+      formData.append('file', selectedFile)
 
-      formData.append(
-        'file',
-        selectedFile
-      )
+      const data = await apiPost('/ai/ocr', formData, true)
 
-      const response = await fetch(
-        'http://127.0.0.1:8000/ai/ocr',
-        {
-          method: 'POST',
-          body: formData,
-        }
-      )
+      setOcrText(data.text || '')
+      alert('OCR completed. Review the extracted text carefully.')
+    } catch (err) {
+      console.error(err)
+    const message =
+      typeof err.message === 'string'
+      ? err.message
+      : JSON.stringify(err.message ?? err)
 
-      if (!response.ok) {
-        throw new Error('OCR failed')
-      }
-
-      const data = await response.json()
-
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
-      const extractedText =
-        data.text || ''
-
-      setOcrText(extractedText)
-
-      updateCaseStorage({
-        ocrText: extractedText,
-        documentName: selectedFile.name,
-        ocrStatus: 'Completed',
-      })
-
-      alert(
-        'Document processed successfully.'
-      )
-    } catch (error) {
-      console.error(error)
-
-      alert(
-        'OCR failed. Make sure FastAPI is running.'
-      )
+alert(message || 'OCR failed.')
     } finally {
       setProcessing(false)
     }
   }
-
-  // ==========================================================
-  // PRECEDENT RETRIEVAL
-  // ==========================================================
 
   const handlePrecedents = async () => {
+    if (!caseData) return
+
     try {
       setProcessing(true)
 
-      const response = await fetch(
-        'http://127.0.0.1:8000/ai/precedents',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            caseType:
-              caseData.caseType,
-
-            description:
-              ocrText ||
-              caseData.description,
-
-            lawSection:
-              caseData.lawSection,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(
-          'Precedent retrieval failed'
-        )
-      }
-
-      const data = await response.json()
+      const data = await apiPost('/ai/precedents', {
+        caseId,
+        caseType: caseData.caseType,
+        description: caseData.description || '',
+        lawSection: caseData.lawSection,
+      })
 
       setPrecedentResult(data)
-
-      updateCaseStorage({
-        precedentResult: data,
-        precedentStatus: 'Completed',
-      })
-
-      alert(
-        `${data.resultsFound} relevant precedent(s) retrieved.`
-      )
-    } catch (error) {
-      console.error(error)
-
-      alert(
-        'Precedent retrieval failed. Make sure FastAPI is running.'
-      )
+      alert(`${data.resultsFound ?? 0} precedent record(s) returned.`)
+    } catch (err) {
+      console.error(err)
+      alert(err.message || 'Precedent retrieval failed.')
     } finally {
       setProcessing(false)
     }
   }
-
-  // ==========================================================
-  // PRIORITY
-  // ==========================================================
 
   const handlePriority = async () => {
+    if (!caseData) return
+
     try {
       setProcessing(true)
 
-      const response = await fetch(
-        'http://127.0.0.1:8000/ai/priority',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            caseType:
-              caseData.caseType,
-
-            description:
-              ocrText ||
-              caseData.description,
-
-            urgency:
-              caseData.urgency,
-
-            lawSection:
-              caseData.lawSection,
-
-            filingDate:
-              caseData.filingDate,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(
-          'Priority analysis failed'
-        )
-      }
-
-      const data = await response.json()
+      const data = await apiPost('/ai/priority', {
+        caseId,
+        caseType: caseData.caseType,
+        description: ocrText || caseData.description,
+        urgency: caseData.urgency,
+        lawSection: caseData.lawSection,
+        filingDate: caseData.filingDate,
+      })
 
       setPriorityResult(data)
-
-      updateCaseStorage({
-        priority:
-          data.priority ||
-          'MEDIUM',
-
-        priorityScore:
-          data.score ?? null,
-
-        priorityResult: data,
-
-        priorityStatus:
-          'Completed',
-
-        status:
-          'Pending',
-      })
-
       alert(
-        `AI priority analysis completed: ${data.priority} (${data.score}/100)`
+        `Priority recommendation: ${data.priority || data.level || 'Unavailable'}; score: ${data.score ?? 'Unavailable'}.`
       )
-    } catch (error) {
-      console.error(error)
-
-      alert(
-        'Priority analysis failed. Make sure FastAPI is running.'
-      )
+    } catch (err) {
+      console.error(err)
+      alert(err.message || 'Priority analysis failed.')
     } finally {
       setProcessing(false)
     }
   }
 
-  // ==========================================================
-  // SCHEDULING
-  // ==========================================================
-
   const handleSchedule = async () => {
-    if (!priorityResult) {
-      alert(
-        'Run AI priority analysis first.'
-      )
+    if (!caseData) return
 
+    if (!priorityResult) {
+      alert('Run priority analysis first.')
       return
     }
 
     try {
       setProcessing(true)
 
-      const priority =
-        priorityResult.priority ||
-        priorityResult.level ||
-        'MEDIUM'
-
-      const response = await fetch(
-        'http://127.0.0.1:8000/ai/schedule',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-          body: JSON.stringify({
-            priority,
-
-            preferredDate:
-              caseData.filingDate ||
-              '2026-09-28',
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(
-          'Scheduling failed'
-        )
-      }
-
-      const data =
-        await response.json()
-
-      setScheduleResult(data)
-
-      updateCaseStorage({
-        scheduleResult: data,
-
-        hearing:
-          `${data.recommendedDate} | ${data.recommendedTime}`,
-
-        hearingDate:
-          data.recommendedDate,
-
-        hearingTime:
-          data.recommendedTime,
-
-        schedulingStatus:
-          'Completed',
+      const data = await apiPost('/ai/schedule', {
+        caseId,
+        priority: priorityResult.priority || priorityResult.level || 'MEDIUM',
+        preferredDate: caseData.filingDate || '',
       })
 
-      alert(
-        'Hearing recommendation generated.'
-      )
-    } catch (error) {
-      console.error(error)
+      setScheduleResult(data)
+      setModifiedDate(data.recommendedDate || '')
+      setModifiedTime(data.recommendedTime || '')
 
-      alert(
-        'Scheduling failed. Make sure FastAPI is running.'
-      )
+      alert('Hearing recommendation generated. Human approval is required.')
+    } catch (err) {
+      console.error(err)
+      alert(err.message || 'Scheduling failed.')
     } finally {
       setProcessing(false)
     }
   }
 
-  // ==========================================================
-  // HUMAN REVIEW
-  // ==========================================================
-
-  const saveReview = (
-    status,
-    customComment = null,
-    customSchedule = null
-  ) => {
-    if (!canReview) {
-      alert(
-        'You are not authorized to make the final case decision.'
-      )
-
-      return
-    }
-
-    const reviewerRole =
-      localStorage.getItem('userRole') ||
-      'User'
-
-    const reviewedAt =
-      new Date().toLocaleString()
-
-    const reviewData = {
-      caseId: caseData.id,
-      status,
-      reviewerRole,
-      reviewedAt,
-    }
-
-    localStorage.setItem(
-      'caseReview',
-      JSON.stringify(reviewData)
-    )
-
-    updateCaseStorage({
-      reviewStatus: status,
-
-      reviewComment:
-        customComment ||
-        (
-          status === 'Approved'
-            ? 'AI recommendation approved by the authorized reviewer.'
-            : status === 'Rejected'
-            ? 'AI recommendation rejected by the authorized reviewer.'
-            : 'AI recommendation modified by the authorized reviewer.'
-        ),
-
-      reviewerRole,
-      reviewedAt,
-
-      ...(customSchedule
-        ? {
-            scheduleResult:
-              customSchedule,
-
-            hearing:
-              `${customSchedule.recommendedDate} | ${customSchedule.recommendedTime}`,
-
-            hearingDate:
-              customSchedule.recommendedDate,
-
-            hearingTime:
-              customSchedule.recommendedTime,
-          }
-        : {}),
-
-      status:
-        status === 'Approved'
-          ? 'Approved'
-          : status === 'Rejected'
-          ? 'Rejected'
-          : 'Modified',
-    })
+  // Prototype review decisions are local-only; they are not persisted.
+  const saveReview = async (status) => {
+  if (!canReview) {
+    alert('Only the assigned judge can review this recommendation.')
+    return
   }
 
-  // ==========================================================
-  // APPROVE
-  // ==========================================================
-
-  const handleApprove = () => {
-    if (!canReview) {
-      alert(
-        'Only Judge or Registrar can approve a case.'
-      )
-
-      return
-    }
-
-    const comment =
-      'AI recommendation approved by the authorized reviewer.'
-
-    setReviewStatus('Approved')
-    setReviewComment(comment)
-
-    saveReview(
-      'Approved',
-      comment
-    )
-
-    alert(
-      'AI recommendation approved.'
-    )
+  if (!caseId || !scheduleResult) {
+    alert('A hearing recommendation is required before reviewing.')
+    return
   }
 
-  // ==========================================================
-  // REJECT
-  // ==========================================================
-
-  const handleReject = () => {
-    if (!canReview) {
-      alert(
-        'Only Judge or Registrar can reject a case.'
-      )
-
-      return
-    }
-
-    const comment =
-      'AI recommendation rejected by the authorized reviewer.'
-
-    setReviewStatus('Rejected')
-    setReviewComment(comment)
-
-    saveReview(
-      'Rejected',
-      comment
-    )
-
-    alert(
-      'AI recommendation rejected.'
-    )
+  if (reviewStatus !== 'Pending') {
+    alert(`This hearing has already been ${reviewStatus.toLowerCase()}.`)
+    return
   }
 
-  // ==========================================================
-  // MODIFY
-  // ==========================================================
-
-  const handleModify = () => {
-    if (!canReview) {
-      alert(
-        'Only Judge or Registrar can modify a case.'
-      )
-
-      return
-    }
-
-    const newDate =
-      window.prompt(
-        'Enter modified hearing date:',
-        scheduleResult?.recommendedDate ||
-          '2026-09-28'
-      )
-
-    if (!newDate) {
-      return
-    }
-
-    const newTime =
-      window.prompt(
-        'Enter modified hearing time:',
-        scheduleResult?.recommendedTime ||
-          '10:00 AM - 11:00 AM'
-      )
-
-    if (!newTime) {
-      return
-    }
-
-    const modifiedSchedule = {
-      ...(scheduleResult || {}),
-      recommendedDate: newDate,
-      recommendedTime: newTime,
-    }
-
-    const comment =
-      'AI recommendation modified by the authorized reviewer.'
-
-    setScheduleResult(
-      modifiedSchedule
-    )
-
-    setReviewStatus(
-      'Modified'
-    )
-
-    setReviewComment(
-      comment
-    )
-
-    saveReview(
-      'Modified',
-      comment,
-      modifiedSchedule
-    )
-
-    alert(
-      'AI recommendation modified successfully.'
-    )
+  if (status === 'Modified' && (!modifiedDate || !modifiedTime.trim())) {
+    alert('Enter both the modified hearing date and time.')
+    return
   }
 
-  // ==========================================================
-  // WORKFLOW STATUS
-  // ==========================================================
+const decisionMap = {
+  Approved: 'Approved',
+  Modified: 'Modified',
+  Rejected: 'Rejected',
+}
+
+  const payload = {
+    decision: decisionMap[status],
+    comments: reviewerNote.trim(),
+  }
+
+  if (status === 'Modified') {
+    payload.modifiedDate = modifiedDate
+    payload.modifiedTime = modifiedTime.trim()
+  }
+
+  try {
+    setProcessing(true)
+
+    const result = await apiPost(
+      `/judge/cases/${encodeURIComponent(caseId)}/hearing-decision`,
+      payload
+    )
+
+    const savedDecision = result.decision || status
+
+    setReviewStatus(savedDecision)
+    setReviewComment(result.comments || reviewerNote.trim())
+
+    setScheduleResult((previous) => ({
+      ...previous,
+      recommendedDate: result.hearingDate || previous.recommendedDate,
+      recommendedTime: result.hearingTime || previous.recommendedTime,
+      decision: savedDecision,
+      humanApprovalRequired: false,
+      alreadyScheduled: true,
+    }))
+
+    setModifiedDate(result.hearingDate || modifiedDate)
+    setModifiedTime(result.hearingTime || modifiedTime)
+
+    setCaseData((previous) => ({
+      ...previous,
+      hearingDecision: savedDecision,
+      proposedHearingDate: result.hearingDate || previous.proposedHearingDate,
+      proposedHearingTime: result.hearingTime || previous.proposedHearingTime,
+    }))
+
+    alert(result.message || `Hearing decision saved: ${savedDecision}.`)
+  } catch (err) {
+    console.error('Failed to save judge decision:', err)
+    alert(err.message || 'Could not save the hearing decision.')
+  } finally {
+    setProcessing(false)
+  }
+}
 
   const workflowSteps = [
     {
-      number: '01',
       title: 'Case Registered',
-      description:
-        'Case record created',
-      completed:
-        Boolean(caseData.id),
+      description: 'Case record loaded from the backend',
+      completed: Boolean(caseData?.id || caseData?.caseId),
     },
-
     {
-      number: '02',
       title: 'OCR Extraction',
-      description:
-        'Document information extracted',
-      completed:
-        Boolean(
-          caseData.ocrStatus ===
-            'Completed' ||
-          ocrText
-        ),
+      description: 'Document text extracted',
+      completed: Boolean(ocrText),
     },
-
     {
-      number: '03',
       title: 'Precedent Retrieval',
-      description:
-        'Relevant precedents identified',
-      completed:
-        Boolean(
-          caseData.precedentStatus ===
-            'Completed' ||
-          precedentResult
-        ),
+      description: 'Precedent results returned',
+      completed: Boolean(precedentResult),
     },
-
     {
-      number: '04',
       title: 'Priority Scoring',
-      description:
-        'AI priority recommendation generated',
-      completed:
-        Boolean(
-          caseData.priorityStatus ===
-            'Completed' ||
-          priorityResult
-        ),
+      description: 'Priority recommendation generated',
+      completed: Boolean(priorityResult),
     },
-
     {
-      number: '05',
       title: 'Hearing Scheduling',
-      description:
-        'Hearing slot recommended',
-      completed:
-        Boolean(
-          caseData.schedulingStatus ===
-            'Completed' ||
-          scheduleResult
-        ),
+      description: 'Hearing slot recommended',
+      completed: Boolean(scheduleResult),
     },
-
     {
-      number: '06',
       title: 'Human Review',
-      description:
-        'Authorized user reviews AI output',
-      completed:
-        reviewStatus !== 'Pending',
+      description: 'Authorized review in current session',
+      completed: reviewStatus !== 'Pending',
     },
   ]
 
-  const completedSteps =
-    workflowSteps.filter(
-      (step) => step.completed
-    ).length
+  const completedSteps = workflowSteps.filter(
+    (step) => step.completed
+  ).length
 
-  const currentStepIndex =
-    workflowSteps.findIndex(
-      (step) => !step.completed
-    )
-
-  const activeStep =
-    currentStepIndex === -1
-      ? workflowSteps.length
-      : currentStepIndex + 1
-
-  const workflowProgress = Math.round(
-    (completedSteps /
-      workflowSteps.length) *
-      100
+  const currentStepIndex = workflowSteps.findIndex(
+    (step) => !step.completed
   )
 
-  // ==========================================================
-  // RENDER
-  // ==========================================================
+  const workflowProgress = Math.round(
+    (completedSteps / workflowSteps.length) * 100
+  )
+
+  if (loading) {
+    return (
+      <div className="case-details-page">
+        <p>Loading case details...</p>
+      </div>
+    )
+  }
+
+  if (error || !caseData) {
+    return (
+      <div className="case-details-page">
+        <h2>Case unavailable</h2>
+        <p role="alert">{error || 'This case could not be loaded.'}</p>
+        <button onClick={() => navigate('/cases')}>
+          Back to My Cases
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="case-details-page">
-
-      {/* PAGE HEADING */}
-
       <div className="case-detail-heading">
-
         <div>
-
           <div className="breadcrumb">
-            Cases / Case Details
+            <Link to="/cases">Cases</Link> / Case Details
           </div>
-
-          <h2>
-            {caseData.id}
-          </h2>
-
-          <p>
-            AI-assisted case analysis and
-            hearing management
-          </p>
-
+          <h2>{caseId}</h2>
+          <p>AI-assisted case analysis and hearing recommendations</p>
         </div>
 
-        <div className="case-detail-actions">
-
-          <button
-            className="secondary-action"
-            onClick={() =>
-              navigate('/cases')
-            }
-          >
-            ← All Cases
-          </button>
-
-        </div>
-
+        <button
+          className="secondary-action"
+          onClick={() => navigate('/cases')}
+        >
+          ← My Cases
+        </button>
       </div>
 
-      {/* CASE OVERVIEW */}
-
       <section className="case-overview-card">
-
         <div className="case-overview-top">
-
           <div>
-
-            <span className="case-label">
-              CASE ID
-            </span>
-
-            <h3>
-              {caseData.id}
-            </h3>
-
+            <span className="case-label">CASE ID</span>
+            <h3>{caseId}</h3>
           </div>
 
           <div className="case-overview-badges">
-
             <span className="detail-status-badge">
-              {caseData.status ||
-                'Registered'}
+              {caseData.status || 'Registered'}
             </span>
-
             <span className="detail-priority-badge">
-
               {priorityResult?.priority ||
                 caseData.priority ||
                 caseData.urgency ||
-                'Medium'}
-
-              {' '}
-
-              {priorityResult
-                ? 'Priority'
-                : 'Urgency'}
-
+                'Not assessed'}
             </span>
-
           </div>
-
         </div>
 
         <div className="case-overview-grid">
-
           <div>
-            <span>
-              Case Type
-            </span>
-
-            <strong>
-              {caseData.caseType}
-            </strong>
+            <span>Case Type</span>
+            <strong>{caseData.caseType || 'Not specified'}</strong>
           </div>
-
           <div>
-            <span>
-              Petitioner
-            </span>
-
-            <strong>
-              {caseData.petitioner}
-            </strong>
+            <span>Petitioner</span>
+            <strong>{caseData.petitioner || '—'}</strong>
           </div>
-
           <div>
-            <span>
-              Respondent
-            </span>
-
-            <strong>
-              {caseData.respondent}
-            </strong>
+            <span>Respondent</span>
+            <strong>{caseData.respondent || '—'}</strong>
           </div>
-
           <div>
-            <span>
-              Filing Date
-            </span>
-
-            <strong>
-              {caseData.filingDate ||
-                'Not specified'}
-            </strong>
+            <span>Filing Date</span>
+            <strong>{caseData.filingDate || 'Not specified'}</strong>
           </div>
-
           <div>
-            <span>
-              Applicable Law
-            </span>
-
-            <strong>
-              {caseData.lawSection ||
-                'Not specified'}
-            </strong>
+            <span>Applicable Law</span>
+            <strong>{caseData.lawSection || 'Not specified'}</strong>
           </div>
-
         </div>
 
         <div className="case-description">
-
-          <span>
-            Case Description
-          </span>
-
-          <p>
-            {caseData.description}
-          </p>
-
+          <span>Case Description</span>
+          <p>{caseData.description || 'No description provided.'}</p>
         </div>
-
       </section>
 
-      {/* =====================================================
-          CASE WORKFLOW TRACKER
-      ====================================================== */}
+      {isCaseOwnerLitigant && (
+        <section className="agent-card">
+          <div className="agent-header">
+            <div className="agent-title">
+              <div className="agent-icon">⚖</div>
+              <div>
+                <span className="agent-label">LITIGANT OPTIONS</span>
+                <h3>Legal Representation</h3>
+                <p>
+                  Choose whether you want help finding a lawyer or prefer
+                  to represent yourself.
+                </p>
+              </div>
+            </div>
+
+            <span className="agent-status">
+              {representationType ? '● Choice saved' : '● Choice required'}
+            </span>
+          </div>
+
+          {representationType ? (
+            <div className="agent-result">
+              <p>
+                Your representation choice:{' '}
+                <strong>{representationType}</strong>
+              </p>
+              <p>
+                Workflow status:{' '}
+                <strong>{workflowStage || 'Saved'}</strong>
+              </p>
+
+              {representationType === 'Recommend a Lawyer' && (
+                <>
+                  {workflowStage === 'Lawyer Assigned' ? (
+                    <p role="status">
+                      Your lawyer has accepted the case and is now assigned.
+                      You cannot select another lawyer while this assignment
+                      is active.
+                    </p>
+                  ) : workflowStage === 'Awaiting Lawyer Approval' ? (
+                    <p role="status">
+                      Your selected lawyer has not responded yet. Please wait
+                      for their decision.
+                    </p>
+                  ) : workflowStage === 'Lawyer Rejected' ? (
+                    <>
+                      <p role="status">
+                        The lawyer rejected your case. You can select another
+                        lawyer using the same case ID.
+                      </p>
+                      <button
+                        onClick={() =>
+                          navigate(
+                            `/cases/${encodeURIComponent(caseId)}/lawyers`
+                          )
+                        }
+                      >
+                        Select Another Lawyer
+                      </button>
+                    </>
+                  ) : (
+                    <p role="status">
+                      Current representation status: {workflowStage || 'Pending'}.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {representationType === 'Self-Representation' && (
+                <p>
+                  You selected self-representation. Your saved choice will
+                  appear here when you return to this case.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="representation-actions">
+              <button
+                disabled={representationLoading}
+                onClick={() =>
+                  handleRepresentationChoice('Recommend a Lawyer')
+                }
+              >
+                {representationLoading ? 'Saving...' : 'Recommend a Lawyer'}
+              </button>
+
+              <button
+                className="secondary-action"
+                disabled={representationLoading}
+                onClick={() =>
+                  handleRepresentationChoice('Self-Representation')
+                }
+              >
+                {representationLoading ? 'Saving...' : 'Self-Representation'}
+              </button>
+            </div>
+          )}
+
+          {representationError && (
+            <p role="alert" className="representation-error">
+              {representationError}
+            </p>
+          )}
+        </section>
+      )}
+
+      {normalizedRole === 'lawyer' &&
+        workflowStage === 'Awaiting Lawyer Approval' && (
+          <section className="agent-card">
+            <div className="agent-header">
+              <div className="agent-title">
+                <div className="agent-icon">⚖</div>
+                <div>
+                  <span className="agent-label">LAWYER ACTION</span>
+                  <h3>Case Representation Request</h3>
+                  <p>
+                    Review this case and decide whether to represent the
+                    litigant.
+                  </p>
+                </div>
+              </div>
+              <span className="agent-status">● Decision required</span>
+            </div>
+
+            {lawyerDecisionError && (
+              <p role="alert" className="representation-error">
+                {lawyerDecisionError}
+              </p>
+            )}
+
+            {lawyerDecisionMessage && (
+              <p role="status">{lawyerDecisionMessage}</p>
+            )}
+
+            <div className="representation-actions">
+              <button
+                disabled={lawyerDecisionLoading}
+                onClick={() => handleLawyerDecision('accept')}
+              >
+                {lawyerDecisionLoading ? 'Submitting...' : 'Accept Case'}
+              </button>
+
+              <button
+                className="secondary-action"
+                disabled={lawyerDecisionLoading}
+                onClick={() => handleLawyerDecision('reject')}
+              >
+                {lawyerDecisionLoading ? 'Submitting...' : 'Reject Case'}
+              </button>
+            </div>
+          </section>
+        )}
 
       <section className="workflow-tracker-card">
-
         <div className="workflow-tracker-header">
-
           <div>
-
-            <span className="agent-label">
-              CASE PROCESSING
-            </span>
-
-            <h3>
-              Case Workflow Progress
-            </h3>
-
-            <p>
-              Track the case from registration
-              through AI processing and
-              authorized human review.
-            </p>
-
+            <span className="agent-label">CASE PROCESSING</span>
+            <h3>Case Workflow Progress</h3>
+            <p>Track the case through processing and human review.</p>
           </div>
-
           <div className="workflow-progress-summary">
-
-            <strong>
-              {workflowProgress}%
-            </strong>
-
+            <strong>{workflowProgress}%</strong>
             <span>
-              {completedSteps} of{' '}
-              {workflowSteps.length}{' '}
-              stages completed
+              {completedSteps} of {workflowSteps.length} stages completed
             </span>
-
           </div>
-
         </div>
 
         <div className="workflow-progress-bar">
-
           <div
             className="workflow-progress-fill"
-            style={{
-              width: `${workflowProgress}%`,
-            }}
+            style={{ width: `${workflowProgress}%` }}
           />
-
         </div>
 
         <div className="workflow-tracker">
-
-          {workflowSteps.map(
-            (step, index) => {
-
-              const isCompleted =
+          {workflowSteps.map((step, index) => (
+            <div
+              className={`workflow-tracker-step ${
                 step.completed
-
-              const isCurrent =
-                !isCompleted &&
-                index ===
-                  currentStepIndex
-
-              return (
-                <div
-                  className={`workflow-tracker-step ${
-                    isCompleted
-                      ? 'completed'
-                      : isCurrent
-                      ? 'current'
-                      : 'locked'
-                  }`}
-                  key={step.number}
-                >
-
-                  <div className="workflow-tracker-circle">
-
-                    {isCompleted
-                      ? '✓'
-                      : step.number}
-
-                  </div>
-
-                  <div className="workflow-tracker-content">
-
-                    <strong>
-                      {step.title}
-                    </strong>
-
-                    <span>
-                      {isCompleted
-                        ? 'Completed'
-                        : isCurrent
-                        ? 'Current stage'
-                        : 'Pending'}
-                    </span>
-
-                    <small>
-                      {step.description}
-                    </small>
-
-                  </div>
-
-                  {index <
-                    workflowSteps.length -
-                      1 && (
-                    <div className="workflow-tracker-connector" />
-                  )}
-
-                </div>
-              )
-            }
-          )}
-
-        </div>
-
-        <div className="workflow-current-message">
-
-          {workflowProgress === 100 ? (
-
-            <strong>
-              ✓ Complete workflow finished
-            </strong>
-
-          ) : (
-
-            <strong>
-              Current stage: Step{' '}
-              {activeStep} —{' '}
-              {workflowSteps[
-                activeStep - 1
-              ]?.title}
-            </strong>
-
-          )}
-
-          <span>
-            AI recommendations remain subject
-            to authorized human review.
-          </span>
-
-        </div>
-
-      </section>
-
-      {/* AI WORKFLOW */}
-
-      <section className="workflow-overview">
-
-        <div className="section-title-row">
-
-          <div>
-
-            <h3>
-              AI Case Processing Workflow
-            </h3>
-
-            <p>
-              Process the case through the
-              specialized AI agents.
-            </p>
-
-          </div>
-
-        </div>
-
-        <div className="workflow-progress">
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              01
-            </div>
-
-            <strong>
-              OCR
-            </strong>
-
-            <span>
-              Document extraction
-            </span>
-
-          </div>
-
-          <div className="workflow-line" />
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              02
-            </div>
-
-            <strong>
-              Precedent
-            </strong>
-
-            <span>
-              Legal retrieval
-            </span>
-
-          </div>
-
-          <div className="workflow-line" />
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              03
-            </div>
-
-            <strong>
-              Priority
-            </strong>
-
-            <span>
-              Case assessment
-            </span>
-
-          </div>
-
-          <div className="workflow-line" />
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              04
-            </div>
-
-            <strong>
-              Scheduling
-            </strong>
-
-            <span>
-              Hearing recommendation
-            </span>
-
-          </div>
-
-          <div className="workflow-line" />
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              05
-            </div>
-
-            <strong>
-              Review
-            </strong>
-
-            <span>
-              Human approval
-            </span>
-
-          </div>
-
-        </div>
-
-      </section>
-
-      {/* DOCUMENT PROCESSING */}
-
-      <section className="agent-card">
-
-        <div className="agent-header">
-
-          <div className="agent-title">
-
-            <div className="agent-icon">
-              📄
-            </div>
-
-            <div>
-
-              <span className="agent-label">
-                AGENT 01
-              </span>
-
-              <h3>
-                Document Processing & OCR
-              </h3>
-
-              <p>
-                Extract text from uploaded
-                case documents.
-              </p>
-
-            </div>
-
-          </div>
-
-          <span className="agent-status">
-
-            {ocrText
-              ? '● Completed'
-              : '● Ready'}
-
-          </span>
-
-        </div>
-
-        <div className="upload-area">
-
-          <div className="upload-content">
-
-            <div className="upload-symbol">
-              ↑
-            </div>
-
-            <strong>
-              Select case document
-            </strong>
-
-            <span>
-              PNG, JPG, JPEG or PDF
-            </span>
-
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,.pdf"
-              onChange={
-                handleFileChange
-              }
-            />
-
-          </div>
-
-        </div>
-
-        {selectedFile && (
-
-          <div className="selected-file">
-
-            <span>
-              📄
-            </span>
-
-            <div>
-
-              <strong>
-                {selectedFile.name}
-              </strong>
-
-              <small>
-                Document selected for OCR
-                processing
-              </small>
-
-            </div>
-
-          </div>
-
-        )}
-
-        <div className="agent-action-row">
-
-          <button
-            onClick={handleOCR}
-            disabled={processing}
-          >
-            {processing
-              ? 'Processing...'
-              : 'Extract Text using OCR'}
-          </button>
-
-        </div>
-
-      </section>
-
-      {/* OCR RESULT */}
-
-      <section className="result-card">
-
-        <div className="result-header">
-
-          <div>
-
-            <span className="result-label">
-              OCR OUTPUT
-            </span>
-
-            <h3>
-              Extracted Document Text
-            </h3>
-
-          </div>
-
-          {ocrText && (
-
-            <span className="completed-badge">
-              ✓ Completed
-            </span>
-
-          )}
-
-        </div>
-
-        {ocrText ? (
-
-          <textarea
-            className="ocr-output"
-            value={ocrText}
-            readOnly
-            rows="10"
-          />
-
-        ) : (
-
-          <div className="empty-result">
-
-            <span>
-              📄
-            </span>
-
-            <p>
-              No OCR text available yet.
-            </p>
-
-            <small>
-              Upload a document above and
-              run the OCR agent.
-            </small>
-
-          </div>
-
-        )}
-
-      </section>
-
-      {/* PRECEDENT AGENT */}
-
-      <section className="agent-card">
-
-        <div className="agent-header">
-
-          <div className="agent-title">
-
-            <div className="agent-icon">
-              ⚖
-            </div>
-
-            <div>
-
-              <span className="agent-label">
-                AGENT 02
-              </span>
-
-              <h3>
-                Precedent Retrieval Agent
-              </h3>
-
-              <p>
-                Retrieve relevant precedents
-                based on case information.
-              </p>
-
-            </div>
-
-          </div>
-
-          {precedentResult && (
-
-            <span className="agent-status">
-              ● Completed
-            </span>
-
-          )}
-
-        </div>
-
-        <div className="agent-description">
-
-          The agent analyzes the case type,
-          extracted document text and
-          applicable law to identify
-          relevant precedent records.
-
-        </div>
-
-        <button
-          onClick={handlePrecedents}
-          disabled={processing}
-        >
-          Retrieve Relevant Precedents
-        </button>
-
-        {precedentResult && (
-
-          <div className="agent-result">
-
-            <div className="result-summary-grid">
-
-              <div>
-
-                <span>
-                  Agent
-                </span>
-
-                <strong>
-                  {precedentResult.agent}
-                </strong>
-
+                  ? 'completed'
+                  : index === currentStepIndex
+                    ? 'current'
+                    : 'locked'
+              }`}
+              key={step.title}
+            >
+              <div className="workflow-tracker-circle">
+                {step.completed ? '✓' : String(index + 1).padStart(2, '0')}
               </div>
-
-              <div>
-
+              <div className="workflow-tracker-content">
+                <strong>{step.title}</strong>
                 <span>
-                  Results Found
+                  {step.completed
+                    ? 'Completed this session'
+                    : index === currentStepIndex
+                      ? 'Current stage'
+                      : 'Pending'}
                 </span>
-
-                <strong>
-                  {precedentResult.resultsFound}
-                </strong>
-
+                <small>{step.description}</small>
               </div>
-
-              <div>
-
-                <span>
-                  Human Review
-                </span>
-
-                <strong>
-                  {precedentResult.humanReviewRequired
-                    ? 'Required'
-                    : 'Not Required'}
-                </strong>
-
-              </div>
-
-            </div>
-
-            <div className="precedent-list">
-
-              {precedentResult.results &&
-                precedentResult.results.map(
-                  (precedent) => (
-
-                    <div
-                      key={precedent.id}
-                      className="precedent-item"
-                    >
-
-                      <div className="precedent-top">
-
-                        <div>
-
-                          <span className="precedent-id">
-                            {precedent.id}
-                          </span>
-
-                          <h4>
-                            {precedent.title}
-                          </h4>
-
-                        </div>
-
-                        <span className="relevance-badge">
-                          {precedent.relevance}
-                        </span>
-
-                      </div>
-
-                      <p>
-                        {precedent.summary}
-                      </p>
-
-                      <div className="precedent-meta">
-
-                        <span>
-                          Type:{' '}
-
-                          <strong>
-                            {precedent.caseType}
-                          </strong>
-
-                        </span>
-
-                        <span>
-                          Match Score:{' '}
-
-                          <strong>
-                            {precedent.matchScore}
-                          </strong>
-
-                        </span>
-
-                        <span>
-                          Keywords:{' '}
-
-                          <strong>
-                            {precedent.matchedKeywords?.join(
-                              ', '
-                            )}
-                          </strong>
-
-                        </span>
-
-                      </div>
-
-                    </div>
-
-                  )
-                )}
-
-            </div>
-
-          </div>
-
-        )}
-
-      </section>
-
-      {/* PRIORITY AGENT */}
-
-      <section className="agent-card">
-
-        <div className="agent-header">
-
-          <div className="agent-title">
-
-            <div className="agent-icon">
-              !
-            </div>
-
-            <div>
-
-              <span className="agent-label">
-                AGENT 03
-              </span>
-
-              <h3>
-                Priority Scoring Agent
-              </h3>
-
-              <p>
-                Analyze case urgency and
-                generate an AI-assisted
-                priority recommendation.
-              </p>
-
-            </div>
-
-          </div>
-
-          {priorityResult && (
-
-            <span className="agent-status">
-              ● Completed
-            </span>
-
-          )}
-
-        </div>
-
-        <div className="agent-description">
-
-          The agent evaluates the case
-          information, urgency, legal details
-          and other factors to determine the
-          recommended priority.
-
-        </div>
-
-        <button
-          onClick={handlePriority}
-          disabled={processing}
-        >
-          Run AI Priority Analysis
-        </button>
-
-        {priorityResult && (
-
-          <div className="priority-result">
-
-            <div className="priority-main">
-
-              <span>
-                Recommended Priority
-              </span>
-
-              <strong>
-                {priorityResult.priority ||
-                  priorityResult.level ||
-                  'Not available'}
-              </strong>
-
-            </div>
-
-            <div className="priority-details">
-
-              <div>
-
-                <span>
-                  Score
-                </span>
-
-                <strong>
-                  {priorityResult.score ??
-                    priorityResult.priorityScore ??
-                    'Not available'}
-                </strong>
-
-              </div>
-
-              <div>
-
-                <span>
-                  Recommendation
-                </span>
-
-                <strong>
-                  {priorityResult.recommendation ||
-                    'AI-based case assessment'}
-                </strong>
-
-              </div>
-
-            </div>
-
-            {priorityResult.reasons &&
-              priorityResult.reasons.length >
-                0 && (
-
-                <div className="priority-reasons">
-
-                  <span>
-                    Analysis Factors
-                  </span>
-
-                  <ul>
-
-                    {priorityResult.reasons.map(
-                      (
-                        reason,
-                        index
-                      ) => (
-
-                        <li
-                          key={index}
-                        >
-                          {reason}
-                        </li>
-
-                      )
-                    )}
-
-                  </ul>
-
-                </div>
-
+              {index < workflowSteps.length - 1 && (
+                <div className="workflow-tracker-connector" />
               )}
+            </div>
+          ))}
+        </div>
 
-          </div>
-
-        )}
-
+        <p>
+          Workflow indicators reflect this page session. AI recommendations
+          are advisory and require authorized human review.
+        </p>
       </section>
 
-      {/* SCHEDULING AGENT */}
-
-      <section className="agent-card">
-
-        <div className="agent-header">
-
-          <div className="agent-title">
-
-            <div className="agent-icon">
-              📅
-            </div>
-
-            <div>
-
-              <span className="agent-label">
-                AGENT 04
+      {/* OCR is available only to self-represented litigants and lawyer owners. */}
+      {canUseOcr && (
+        <>
+          <section className="agent-card">
+            <div className="agent-header">
+              <div className="agent-title">
+                <div className="agent-icon">📄</div>
+                <div>
+                  <span className="agent-label">PROCESSING MODULE</span>
+                  <h3>Document Processing & OCR</h3>
+                  <p>Extract text from a case document.</p>
+                </div>
+              </div>
+              <span className="agent-status">
+                {ocrText ? '● Text available' : '● Ready'}
               </span>
-
-              <h3>
-                Hearing Scheduling Agent
-              </h3>
-
-              <p>
-                Recommend an available
-                hearing slot based on case
-                priority.
-              </p>
-
             </div>
 
-          </div>
+            <div className="upload-area">
+              <div className="upload-content">
+                <strong>Select case document</strong>
+                <span>
+                  PNG, JPG, JPEG, TIFF or BMP supported by the current backend
+                </span>
+                <input
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.tif,.tiff,.bmp"
+                  onChange={handleFileChange}
+                />
+              </div>
+            </div>
 
-          {scheduleResult && (
+            {selectedFile && <p>Selected: {selectedFile.name}</p>}
 
-            <span className="agent-status">
-              ● Completed
-            </span>
+            <button
+              onClick={handleOCR}
+              disabled={processing || !selectedFile}
+            >
+              {processing ? 'Processing...' : 'Extract Text using OCR'}
+            </button>
+          </section>
 
-          )}
+          <section className="result-card">
+            <div className="result-header">
+              <div>
+                <span className="result-label">OCR OUTPUT</span>
+                <h3>Extracted Document Text</h3>
+              </div>
+            </div>
 
-        </div>
+            {ocrText ? (
+              <textarea
+                className="ocr-output"
+                value={ocrText}
+                readOnly
+                rows={10}
+              />
+            ) : (
+              <div className="empty-result">
+                <p>No OCR text available in this session yet.</p>
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
-        <div className="agent-description">
+      {/* All three analysis agents are available to authorized case handlers. */}
+      {canUseAnalysisAgents && (
+        <>
+          <section className="agent-card">
+            <div className="agent-header">
+              <div className="agent-title">
+                <div className="agent-icon">⚖</div>
+                <div>
+                  <span className="agent-label">MODULE 02</span>
+                  <h3>Precedent Retrieval</h3>
+                  <p>Search the prototype precedent knowledge source.</p>
+                </div>
+              </div>
+            </div>
 
-          The scheduling agent uses the case
-          priority and available hearing slots
-          to recommend an appropriate date
-          and time.
+            <button onClick={handlePrecedents} disabled={processing}>
+              Retrieve Relevant Precedents
+            </button>
 
-        </div>
+            {precedentResult && (
+              <div className="agent-result">
+                <p>
+                  Results returned:{' '}
+                  {precedentResult.resultsFound ?? 'Not specified'}
+                </p>
+                <p>
+                  Human review required:{' '}
+                  {precedentResult.humanReviewRequired
+                    ? 'Yes'
+                    : 'Check source output'}
+                </p>
 
-        <button
-          onClick={handleSchedule}
-          disabled={
-            processing ||
-            !priorityResult
-          }
+
+{(precedentResult.results || []).map((precedent, index) => (
+  <div
+    className="precedent-item"
+    key={precedent.id || index}
+  >
+    <h4>{precedent.title || 'Precedent record'}</h4>
+
+    <p>{precedent.summary || ''}</p>
+
+    <p>
+      <strong>Case type:</strong>{' '}
+      {precedent.caseType || 'Not specified'}
+    </p>
+
+    <p>
+      <strong>Relevance:</strong>{' '}
+      {precedent.relevance || 'Not assessed'}
+      {' · '}
+      <strong>Match score:</strong>{' '}
+      {precedent.matchScore ?? 'Unavailable'}
+    </p>
+
+    <p>
+      <strong>Verification status:</strong>{' '}
+      {precedent.verificationStatus || 'Unknown'}
+    </p>
+
+    {precedent.citation && (
+      <p>
+        <strong>Citation:</strong> {precedent.citation}
+      </p>
+    )}
+
+    {precedent.court && (
+      <p>
+        <strong>Court:</strong> {precedent.court}
+      </p>
+    )}
+
+    {precedent.decisionDate && (
+      <p>
+        <strong>Decision date:</strong> {precedent.decisionDate}
+      </p>
+    )}
+
+    {precedent.sourceUrl && (
+      <p>
+        <strong>Source:</strong>{' '}
+        <a
+          href={precedent.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
         >
-          Generate Hearing Recommendation
-        </button>
+          View source
+        </a>
+      </p>
+    )}
 
-        {!priorityResult && (
+    {precedent.matchedKeywords?.length > 0 && (
+      <p>
+        <strong>Matched keywords:</strong>{' '}
+        {precedent.matchedKeywords.join(', ')}
+      </p>
+    )}
+  </div>
+))}
 
-          <div className="dependency-message">
-            Run the Priority Scoring Agent
-            first.
-          </div>
+{precedentResult.resultsFound === 0 && (
+  <p role="status">No matching records were found.</p>
+)}
 
-        )}
+{precedentResult.disclaimer && (
+  <p role="note">
+    <strong>Important:</strong> {precedentResult.disclaimer}
+  </p>
+)}
 
-        {scheduleResult && (
+              </div>
+            )}
+          </section>
 
-          <div className="schedule-result">
-
-            <div className="schedule-highlight">
-
-              <span>
-                Recommended Hearing
-              </span>
-
-              <strong>
-                {scheduleResult.recommendedDate}
-              </strong>
-
-              <b>
-                {scheduleResult.recommendedTime}
-              </b>
-
+          <section className="agent-card">
+            <div className="agent-header">
+              <div className="agent-title">
+                <div className="agent-icon">!</div>
+                <div>
+                  <span className="agent-label">MODULE 03</span>
+                  <h3>Priority Scoring</h3>
+                  <p>Generate a prototype priority recommendation.</p>
+                </div>
+              </div>
             </div>
 
-            <div className="schedule-details">
+            <button onClick={handlePriority} disabled={processing}>
+              Run Priority Analysis
+            </button>
 
-              <div>
+            
+{priorityResult && (
+  <div className="priority-result">
+    <p>
+      Priority:{' '}
+      <strong>{priorityResult.priority || 'Unavailable'}</strong>
+    </p>
 
-                <span>
-                  Priority
-                </span>
+    <p>
+      Prototype score:{' '}
+      <strong>{priorityResult.score ?? 'Unavailable'} / 100</strong>
+    </p>
 
-                <strong>
-                  {scheduleResult.priority}
-                </strong>
+    <p>
+      This is a rule-based prototype score, not an accuracy percentage
+      or a legally validated assessment.
+    </p>
 
-              </div>
+    {priorityResult.recommendation && (
+      <p>
+        <strong>Recommendation:</strong>{' '}
+        {priorityResult.recommendation}
+      </p>
+    )}
 
-              <div>
+    {priorityResult.reasons?.length > 0 && (
+      <div>
+        <h4>Scoring reasons</h4>
+        <ul>
+          {priorityResult.reasons.map((reason, index) => (
+            <li key={`${index}-${reason}`}>{reason}</li>
+          ))}
+        </ul>
+      </div>
+    )}
 
-                <span>
-                  Reason
-                </span>
-
-                <strong>
-                  {scheduleResult.reason}
-                </strong>
-
-              </div>
-
-              <div>
-
-                <span>
-                  Human Approval
-                </span>
-
-                <strong>
-                  {scheduleResult.humanApprovalRequired
-                    ? 'Required'
-                    : 'Not Required'}
-                </strong>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        )}
-
-      </section>
-
-      {/* HUMAN REVIEW */}
-
-      <section className="review-card">
-
-        <div className="review-header">
-
-          <div>
-
-            <span className="agent-label">
-              FINAL CONTROL
-            </span>
-
-            <h3>
-              Human-in-the-Loop Review
-            </h3>
-
-            <p>
-              AI recommendations are advisory.
-              Final action requires authorized
-              human review.
-            </p>
-
-          </div>
-
-          <span
-            className={`review-status ${reviewStatus.toLowerCase()}`}
+    {priorityResult.factors?.length > 0 && (
+      <div>
+        <h4>Scoring factors</h4>
+        {priorityResult.factors.map((factor, index) => (
+          <div
+            className="precedent-item"
+            key={`${factor.factor}-${index}`}
           >
-            {reviewStatus}
-          </span>
+            <p>
+              <strong>{factor.factor}</strong>
+            </p>
+            <p>
+              <strong>Value:</strong>{' '}
+              {Array.isArray(factor.value)
+                ? factor.value.map((item) =>
+                    typeof item === 'string'
+                      ? item
+                      : item?.title || JSON.stringify(item)
+                  ).join(', ') || 'None'
+                : factor.value ?? 'Not available'}
+            </p>
+            <p>
+              <strong>Points:</strong> {factor.points ?? 0}
+            </p>
+            {factor.explanation && <p>{factor.explanation}</p>}
+          </div>
+        ))}
+      </div>
+    )}
 
-        </div>
+    {priorityResult.reviewFlags?.length > 0 && (
+      <div role="note">
+        <h4>Human review flags</h4>
+        <ul>
+          {priorityResult.reviewFlags.map((flag, index) => (
+            <li key={`${index}-${flag}`}>{flag}</li>
+          ))}
+        </ul>
+      </div>
+    )}
 
-        <div className="review-information">
+    {priorityResult.precedents?.length > 0 && (
+      <div>
+        <h4>Precedent context</h4>
+        {priorityResult.precedents.map((precedent, index) => (
+          <div
+            className="precedent-item"
+            key={precedent.id || index}
+          >
+            <p>
+              <strong>{precedent.title}</strong>
+            </p>
+            <p>
+              Match score: {precedent.matchScore ?? 'Unavailable'}
+            </p>
+            <p>
+              Verification status:{' '}
+              {precedent.verificationStatus || 'Unknown'}
+            </p>
+            {precedent.citation && <p>{precedent.citation}</p>}
+          </div>
+        ))}
+      </div>
+    )}
 
-          <div>
+    {priorityResult.humanReviewRequired && (
+      <p role="note">
+        Human review is required before acting on this recommendation.
+      </p>
+    )}
 
-            <span>
-              Current User Role
+    {priorityResult.disclaimer && (
+      <p role="note">
+        <strong>Disclaimer:</strong> {priorityResult.disclaimer}
+      </p>
+    )}
+  </div>
+)}
+
+          </section>
+
+          <section className="agent-card">
+            <div className="agent-header">
+              <div className="agent-title">
+                <div className="agent-icon">📅</div>
+                <div>
+                  <span className="agent-label">MODULE 04</span>
+                  <h3>Hearing Scheduling</h3>
+                  <p>Generate a prototype hearing-slot recommendation.</p>
+                </div>
+              </div>
+            </div>
+
+<button
+  onClick={handleSchedule}
+  disabled={
+    processing ||
+    !priorityResult ||
+    Boolean(scheduleResult?.alreadyScheduled)
+  }
+>
+  {scheduleResult?.alreadyScheduled
+    ? 'Recommendation Already Exists'
+    : 'Generate Hearing Recommendation'}
+</button>
+
+            {!priorityResult && <p>Run priority analysis first.</p>}
+
+            {scheduleResult && (
+              <div className="schedule-result">
+                <p>
+                  Recommended date:{' '}
+                  <strong>
+                    {scheduleResult.recommendedDate || 'Not returned'}
+                  </strong>
+                </p>
+                <p>
+                  Recommended time:{' '}
+                  <strong>
+                    {scheduleResult.recommendedTime || 'Not returned'}
+                  </strong>
+                </p>
+                <p>
+                  Human approval required:{' '}
+                  <strong>
+                    {scheduleResult.humanApprovalRequired
+                      ? 'Yes'
+                      : 'Verify response'}
+                  </strong>
+                </p>
+                {scheduleResult.reason && <p>{scheduleResult.reason}</p>}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {/* Judges and registrars can review recommendations but cannot run agents. */}
+      {canReview && (
+        <section className="review-card">
+          <div className="review-header">
+            <div>
+              <span className="agent-label">FINAL CONTROL</span>
+              <h3>Human-in-the-Loop Review</h3>
+              <p>Final decisions must be made by authorized personnel.</p>
+            </div>
+            <span className={`review-status ${reviewStatus.toLowerCase()}`}>
+              {reviewStatus}
             </span>
-
-            <strong>
-              {role}
-            </strong>
-
           </div>
 
-          <div>
+          <p>
+            Current role: <strong>{role}</strong>
+          </p>
 
-            <span>
-              Case
-            </span>
-
-            <strong>
-              {caseData.id}
-            </strong>
-
-          </div>
-
-          <div>
-
-            <span>
-              Recommendation
-            </span>
-
+          <p>
+            Current recommendation:{' '}
             <strong>
               {scheduleResult
-                ? `${scheduleResult.recommendedDate} | ${scheduleResult.recommendedTime}`
+                ? `${scheduleResult.recommendedDate || ''} ${scheduleResult.recommendedTime || ''}`
                 : 'Not generated'}
             </strong>
+          </p>
 
+          <label>
+            Reviewer note
+            <textarea
+              value={reviewerNote}
+              onChange={(event) => setReviewerNote(event.target.value)}
+              rows={3}
+              placeholder="Enter review notes"
+            />
+          </label>
+
+          {scheduleResult && (
+            <>
+              <label>
+                Modified hearing date
+                <input
+                  type="date"
+                  value={modifiedDate}
+                  onChange={(event) => setModifiedDate(event.target.value)}
+                />
+              </label>
+
+              <label>
+                Modified hearing time
+                <input
+                  type="text"
+                  value={modifiedTime}
+                  onChange={(event) => setModifiedTime(event.target.value)}
+                  placeholder="e.g. 10:00 AM - 11:00 AM"
+                />
+              </label>
+            </>
+          )}
+
+          <div className="review-actions">
+        <button
+  className="approve-button"
+  disabled={
+    processing ||
+    reviewStatus !== 'Pending' ||
+    !scheduleResult
+  }
+  onClick={() => saveReview('Approved')}
+>
+  {processing ? 'Saving...' : 'Approve'}
+</button>
+
+ <button
+  className="modify-button"
+  disabled={
+    processing ||
+    reviewStatus !== 'Pending' ||
+    !scheduleResult ||
+    !modifiedDate ||
+    !modifiedTime.trim()
+  }
+  onClick={() => saveReview('Modified')}
+>
+  {processing ? 'Saving...' : 'Modify'}
+</button>           
+  <button
+  className="reject-button"
+  disabled={
+    processing ||
+    reviewStatus !== 'Pending' ||
+    !scheduleResult
+  }
+  onClick={() => saveReview('Rejected')}
+>
+  {processing ? 'Saving...' : 'Reject'}
+</button>
           </div>
 
-        </div>
+          {reviewComment && <p>Current session note: {reviewComment}</p>}
 
-        {canReview ? (
-
-          reviewStatus === 'Pending' ? (
-
-            <div className="review-actions">
-
-              <button
-                className="approve-button"
-                onClick={handleApprove}
-                disabled={
-                  !scheduleResult
-                }
-              >
-                ✓ Approve
-              </button>
-
-              <button
-                className="modify-button"
-                onClick={handleModify}
-                disabled={
-                  !scheduleResult
-                }
-              >
-                ✎ Modify
-              </button>
-
-              <button
-                className="reject-button"
-                onClick={handleReject}
-                disabled={
-                  !scheduleResult
-                }
-              >
-                × Reject
-              </button>
-
-            </div>
-
-          ) : (
-
-            <div className="final-review-message">
-
-              <strong>
-                Final Decision:{' '}
-                {reviewStatus}
-              </strong>
-
-              <p>
-                {reviewComment}
-              </p>
-
-            </div>
-
-          )
-
-        ) : (
-
-          <div className="final-review-message">
-
-            <strong>
-              🔒 Authorized Review Required
-            </strong>
-
-            <p>
-              You are logged in as{' '}
-              <strong>
-                {role}
-              </strong>.
-              Only Judge or Registrar can
-              approve, modify or reject AI
-              recommendations.
-            </p>
-
-          </div>
-
-        )}
-
-      </section>
+<p>
+  Hearing decisions are submitted to the backend. Once a decision
+  is recorded, review actions are disabled for this recommendation.
+</p>
+        </section>
+      )}
 
       <div className="case-footer-note">
-
-        Academic Prototype · AI
-        recommendations require human
-        review before final decisions.
-
+        Academic prototype · Recommendations are advisory and require human
+        review.
       </div>
-
     </div>
   )
 }
