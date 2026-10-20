@@ -1,20 +1,35 @@
+
 import { NavLink, useNavigate } from 'react-router-dom'
 
 function Layout({ children }) {
   const navigate = useNavigate()
 
-  const role =
+  const role = (
     localStorage.getItem('userRole') || 'User'
+  ).trim()
+
+  const normalizedRole = role.toLowerCase()
 
   const email =
     localStorage.getItem('userEmail') ||
     'user@example.com'
 
+  const dashboardPath = {
+    litigant: '/litigant',
+    lawyer: '/lawyer',
+    judge: '/judge',
+    admin: '/admin',
+  }[normalizedRole] || '/login'
+
   const handleLogout = () => {
+    // Clear the local session.
+    localStorage.removeItem('accessToken')
     localStorage.removeItem('userRole')
     localStorage.removeItem('userEmail')
+    localStorage.removeItem('userId')
     localStorage.removeItem('isLoggedIn')
-    navigate('/')
+
+    navigate('/', { replace: true })
   }
 
   const linkClass = ({ isActive }) =>
@@ -22,24 +37,15 @@ function Layout({ children }) {
       ? 'sidebar-link active'
       : 'sidebar-link'
 
-  // Role-based navigation permissions
   const canRegisterCase =
-    role === 'Litigant' ||
-    role === 'Lawyer' ||
-    role === 'Registrar'
+    normalizedRole === 'litigant' ||
+    normalizedRole === 'lawyer'
 
   return (
     <div className="portal-layout">
-
-      {/* SIDEBAR */}
-
       <aside className="sidebar">
-
         <div className="sidebar-logo">
-          <div className="logo-mark">
-            ⚖
-          </div>
-
+          <div className="logo-mark">⚖</div>
           <div>
             <h2>AI e-Portal</h2>
             <span>Case Management</span>
@@ -47,13 +53,11 @@ function Layout({ children }) {
         </div>
 
         <div className="sidebar-menu">
-
-          <p className="menu-title">
-            MAIN MENU
-          </p>
+          <p className="menu-title">MAIN MENU</p>
 
           <NavLink
-            to="/dashboard"
+            to={dashboardPath}
+            end
             className={linkClass}
           >
             <span>▣</span>
@@ -77,22 +81,18 @@ function Layout({ children }) {
               Register Case
             </NavLink>
           )}
-
         </div>
 
         <div className="sidebar-bottom">
-
           <div className="user-box">
-
             <div className="user-avatar">
-              {role.charAt(0)}
+              {role.charAt(0).toUpperCase()}
             </div>
 
             <div className="user-info">
               <strong>{role}</strong>
               <span>{email}</span>
             </div>
-
           </div>
 
           <button
@@ -101,25 +101,15 @@ function Layout({ children }) {
           >
             Logout
           </button>
-
         </div>
-
       </aside>
 
-      {/* MAIN AREA */}
-
       <div className="portal-main">
-
         <header className="topbar">
-
           <div>
-            <h1>
-              AI Multi-Agent e-Portal
-            </h1>
-
+            <h1>AI Multi-Agent e-Portal</h1>
             <p>
-              Case Management & Hearing
-              Prioritization
+              Case Management &amp; Hearing Prioritization
             </p>
           </div>
 
@@ -127,15 +117,12 @@ function Layout({ children }) {
             <span>Logged in as</span>
             <strong>{role}</strong>
           </div>
-
         </header>
 
         <main className="page-content">
           {children}
         </main>
-
       </div>
-
     </div>
   )
 }
