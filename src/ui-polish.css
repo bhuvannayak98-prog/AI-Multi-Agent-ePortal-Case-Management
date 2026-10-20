@@ -1,0 +1,249 @@
+/* =========================================
+   AI CASE PORTAL — VISUAL POLISH ONLY
+   Does not change React or API logic
+   ========================================= */
+
+:root {
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #172b4d;
+  background: #f5f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --portal-navy: #173b68;
+  --portal-blue: #245ca6;
+  --portal-text: #172b4d;
+  --portal-muted: #68778c;
+  --portal-border: #dfe6ef;
+  --portal-surface: #ffffff;
+  --portal-bg: #f5f7fb;
+  --portal-radius: 12px;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--portal-bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--portal-text);
+  background: var(--portal-bg);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  line-height: 1.55;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+h1, h2, h3, h4 {
+  color: #173454;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  font-weight: 750;
+}
+
+h2 {
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  font-weight: 700;
+}
+
+p {
+  line-height: 1.65;
+}
+
+a {
+  color: var(--portal-blue);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: #163f79;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #93baf0;
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  border-color: #cbd5e1;
+  border-radius: 8px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  border-color: #4a80c5;
+  box-shadow: 0 0 0 3px rgb(36 92 166 / 10%);
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  color: #43556e;
+  font-weight: 700;
+}
+
+td,
+th {
+  line-height: 1.5;
+}
+
+tbody tr {
+  transition: background-color 120ms ease;
+}
+
+tbody tr:hover {
+  background-color: #f7faff;
+}
+
+img {
+  max-width: 100%;
+}
+
+::selection {
+  color: #173454;
+  background: #d9e9ff;
+}
+
+/* Existing Litigant Dashboard class names */
+.lit-page {
+  color: var(--portal-text);
+  background: var(--portal-bg);
+}
+
+.lit-sidebar {
+  border-right-color: var(--portal-border);
+}
+
+.lit-main {
+  min-width: 0;
+}
+
+.lit-topbar {
+  gap: 16px;
+}
+
+.lit-section,
+.lit-welcome,
+.lit-stat {
+  border-color: var(--portal-border);
+  border-radius: var(--portal-radius);
+}
+
+.lit-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.lit-table {
+  min-width: 720px;
+  width: 100%;
+}
+
+.lit-table th {
+  background: #f3f6fb;
+}
+
+.lit-button,
+.lit-view-link {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.lit-search {
+  min-width: 0;
+}
+
+/* Smaller screens */
+@media (max-width: 760px) {
+  body {
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.65rem;
+  }
+
+  .lit-main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .lit-topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .lit-section-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .lit-search {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
